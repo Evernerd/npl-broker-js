@@ -9,10 +9,10 @@ const EventEmitter = __nccwpck_require__(361);
 /**
  * NPL Broker for HotPocket applications.
  * @author Wo Jake & Mark
- * @version 0.1.0
- * @description A NPL brokerage standard implemented on NodeJS for HotPocket dApps to manage their NPL rounds.
+ * @version 0.2.0
+ * @description A NPL brokerage system (EVS-01) for HotPocket dApps to manage their NPL rounds.
  * 
- * See https://github.com/Evernerd/NPLBroker to learn more and contribute to the codebase, any mode of contribution is truly appreciated.
+ * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
  */
 
 // -- FUNCTIONS --
@@ -21,96 +21,82 @@ const EventEmitter = __nccwpck_require__(361);
 // .unsubscribeRound()
 // .getEvents()
 // .getRoundSubscribers()
-
-const datasetEmitter = new EventEmitter(); 
+// .performNplRound()
 
 /**
- * Initialize NPL Broker instance
+ * The NPL Broker instance object.
  */
 let instance;
 
-// DEV NOTE
+// DEV NOTE ON EventEmitter()
 // The EventEmitter calls all listeners synchronously in the order in which they were registered.
 // This ensures the proper sequencing of events and helps avoid race conditions and logic errors.
 // When appropriate, listener functions can switch to an asynchronous mode of operation using the setImmediate() or process.nextTick() methods.
 // hope this helps
 
-class NPLBroker {
+class NPLBroker extends EventEmitter {
     /**
-     * @param {*} mode - The NPL Broker's mode (public OR private)
-     * @param {*} maxListeners - The *max* amount of event listeners or NPL round subscribers
-     * @param {*} ctx - The HotPocket instance's contract context
+     * @param {*} ctx - The HotPocket instance's contract context.
      */
-    constructor(mode, maxListeners, ctx) {
-
-        this._mode = mode;
-        this._maxListeners = maxListeners;
+    constructor(ctx) {
+        super();
+        
         this._ctx = ctx;
 
         /**
-         * Enable NPL message receiver on this HP instance
+         * Enable NPL message receiver on this HP instance.
          */
         ctx.unl.onMessage((node, payload, {roundName, content} = JSON.parse(payload)) => {
-            datasetEmitter.emit(roundName, {
+            this.emit(roundName, {
                 node: node.publicKey,
                 content: content
             });
 		});
 
-        if (mode === "public") {
-            datasetEmitter.setMaxListeners(maxListeners ?? Infinity);
-        } else {
-            datasetEmitter.setMaxListeners(maxListeners ?? 1);
-        }
+        this.setMaxListeners(Infinity);
     }
 
     /**
-     * Listen (subscribe) to a particular event (NPL round).
+     * Subscribe to an NPL round name.
      * 
-     * @param {*} roundName - The event's name (NPL round name)
-     * @param {Function} listener - The `listener` function that will be called if the event is emitted
+     * @param {*} roundName - The NPL round name.
+     * @param {Function} listener - The function that will be called per each NPL message passing through the NPL round.
      */
     subscribeRound(roundName, listener) {
         if (Object.prototype.toString.call(roundName) === '[object Date]') {
-            throw new Error(`roundName field is not valid, cannot be [object Date]`);
+            throw new Error(`roundName type is not valid, cannot be [object Date]`);
         }
 
-        if (datasetEmitter.getMaxListeners() > datasetEmitter.listenerCount(roundName)) {
-            datasetEmitter.on(roundName, listener);
-        } else {
-            throw new Error(`roundName "${roundName}" already exist or the amount of subscribers is exceeding the set limit of ${datasetEmitter.getMaxListeners()}!`);
-        }
+        this.on(roundName, listener);
     }
 
     /**
-     * Remove a particular listener from an event (NPL round), only *ONE* unique listener is removed per each call.
+     * Remove a particular subscriber of an NPL round name, only *ONE* unique subscriber is removed per each call.
      * 
-     * @param {*} roundName - The event's name (NPL round name)
-     * @param {Function} listener - The `listener` function that will be removed from the event
+     * @param {*} roundName - The NPL round name.
+     * @param {Function} listener - The function that will be removed from the NPL round.
      */
     unsubscribeRound(roundName, listener) {
         if (Object.prototype.toString.call(roundName) === '[object Date]') {
-            throw new Error(`roundName field is not valid, cannot be [object Date]`);
+            throw new Error(`roundName type is not valid, cannot be [object Date]`);
         }
         
-        datasetEmitter.removeListener(roundName, listener);
+        this.removeListener(roundName, listener);
     }
 
     /**
-     * Returns an array listing the events (NPL rounds) for which has registered (live) listeners.
+     * Returns an array listing the NPL round names that have live subscribers.
      * 
      * @returns {array}
      */
     getEvents() {
-        if (this._mode === "public") {
-            return datasetEmitter.eventNames();
-        } 
+        return this.eventNames();
     };
 
     /**
-     * Returns an array of listeners (subscribers) for the event (NPL round).
+     * Returns an array of subscribers of an NPL round name.
      * 
-     * @param {*} roundName - The event's name (NPL round name) 
+     * @param {*} roundName - The NPL round name.
      * @returns {array}
      */
     getRoundSubscribers(roundName) {
@@ -118,44 +104,41 @@ class NPLBroker {
             throw new Error(`roundName field is not valid, cannot be [object Date]`);
         }
 
-        if (this._mode === "public") {
-            return datasetEmitter.listeners(roundName);
-        }
+        return this.listeners(roundName);
     };
 
     /**
-     * Perform a NPL round to distribute and collect NPL messages from UNL-peers.
+     * Perform an NPL round to distribute and collect NPL messages from peers.
      * 
-     * @param {*} roundName 
-     * @param {*} content
-     * @param {number} desiredCount
-     * @param {number} timeout
+     * @param {string} roundName - The NPL round name. This *must* be unique.
+     * @param {*} content - The content that will be distributed to this instance's peers.
+     * @param {number} desiredCount - The desired count of NPL messages to collect.
+     * @param {number} timeout - The time interval given to this NPL round to conclude.
+     * @returns {object}
      */
     async performNplRound({roundName, content, desiredCount, timeout}, startingTime = performance.now()) {
-        if (Object.prototype.toString.call(roundName) === '[object Date]') {
-            throw new Error(`roundName field is not valid, cannot be [object Date]`);
+        if (typeof roundName !== "string") {
+            throw new Error(`roundName type is not valid, must be string`);
         }
         if (typeof desiredCount !== "number") {
-            throw new Error(`desiredCount field is not valid, must be number`);
+            throw new Error(`desiredCount type is not valid, must be number`);
         }
         if (typeof timeout !== "number") {
-            throw new Error(`timeout field is not valid, must be number`);
+            throw new Error(`timeout type is not valid, must be number`);
         }
 
         const NPL = (roundName, desiredCount, timeout, startingTime) => {
 			return new Promise((resolve) => {
 				var record = [],
-				    collectedData = [],
                     participants = [],
                     timeTakenNodes = [];
 
+                // The object that will be returned to this function's caller (.performNplRound)
 				const response = {
 					roundName: roundName,
 					record: record,
-					data: collectedData,
-					participants: participants,
 					desiredCount: desiredCount,
-                    desiredCountReached: collectedData.length >= desiredCount,
+                    desiredCountReached: record.length >= desiredCount,
 					timeout: timeout,
 					timeTaken: undefined,
                     meanTime: undefined
@@ -163,11 +146,10 @@ class NPLBroker {
 
 				const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
                     // Fire up the set timeout if we didn't receive enough messages.
-                    datasetEmitter.removeListener(roundName, NPL_ROUND_PLACEHOLDER_DEADBEEF);
+                    this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
                     response.timeTaken = roundTimeTaken,
-                    response.desiredCountReached = collectedData.length >= desiredCount,
-                    response.participants = participants;
+                    response.desiredCountReached = record.length >= desiredCount;
 
                     var total = 0;
                     timeTakenNodes.forEach(timeTaken => {
@@ -178,31 +160,28 @@ class NPLBroker {
                     resolve(response);
 				}, timeout);
 
-                const NPL_ROUND_PLACEHOLDER_DEADBEEF = (packet, nodeTimeTaken = performance.now() - startingTime) => {
+                const LISTENER_NPL_ROUND_PLACEHOLDER = (packet, nodeTimeTaken = performance.now() - startingTime) => {
                     if (!participants.includes(packet.node)) {
+                        participants.push(packet.node),
                         record.push({
                             "roundName": roundName, 
                             "node": packet.node, // the hotpocket node's public key
                             "content": packet.content, // the NPL packet's data
                             "timeTaken": nodeTimeTaken // the time taken for us to receive a response from *this* peer (data.node)
                         }),
-                        collectedData.push(packet.content),
-                        participants.push(packet.node);
-
                         timeTakenNodes.push(nodeTimeTaken);
 
                         // Resolve immediately if we have the required no. of messages.
-                        if (collectedData.length === desiredCount) {
+                        if (record.length === desiredCount) {
                             clearTimeout(timer);
 
                             const finish = performance.now();
 
-                            datasetEmitter.removeListener(roundName, NPL_ROUND_PLACEHOLDER_DEADBEEF);
+                            this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
-                            response.desiredCountReached = collectedData.length >= desiredCount,
                             response.timeTaken = finish - startingTime,
-                            response.participants = participants;
-                            
+                            response.desiredCountReached = record.length >= desiredCount;
+
                             var total = 0;
                             timeTakenNodes.forEach(timeTaken => {
                                 total += timeTaken;
@@ -212,22 +191,26 @@ class NPLBroker {
                             resolve(response);
                         }
                     } else {
-                        throw new Error(`CRITICAL - ${packet.node} sent more than 1 response in NPL round "${roundName}". Possible occurance of an overlapping NPL round`);
+                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
                     }
 				}
 
-				datasetEmitter.on(roundName, NPL_ROUND_PLACEHOLDER_DEADBEEF);
+                // Temporarily subscribe to the NPL round name
+                // `LISTENER_NPL_ROUND_PLACEHOLDER` is the function that will be handling all emits (NPL messages)
+				this.on(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 			});
 		};
 
-        if (datasetEmitter.getMaxListeners() > datasetEmitter.listenerCount(roundName)) {
-            await this._ctx.unl.send(JSON.stringify({
-                roundName: roundName,
-                content: content
-            }));
-            return await NPL(roundName, desiredCount, timeout, startingTime);
+        await this._ctx.unl.send(JSON.stringify({
+            roundName: roundName,
+            content: content
+        }));
+        const NPL_round_result = await NPL(roundName, desiredCount, timeout, startingTime);
+
+        if (NPL_round_result instanceof Error) {
+            throw NPL_round_result;
         } else {
-            throw new Error(`roundName "${roundName}" already exist or the amount of subscribers is exceeding the set limit of ${datasetEmitter.getMaxListeners()}!`);
+            return NPL_round_result;
         }
     }
 }
@@ -235,15 +218,15 @@ class NPLBroker {
 /**
  * Initialize the NPL-Broker class, which contains all the variables, functions that is available.
  * 
- * @param {string} mode - The mode for the NPL Broker (public OR private)
- * @param {number} maxListeners - The *max* amount of listeners (subscribers) that a particular event (NPL round) could have
- * @param {object} ctx - The HotPocket instance's contract context
+ * @param {object} ctx - The HotPocket instance's contract context.
  * @returns {object}
  */
-function init({mode, maxListeners, ctx}) {
-    // Singelton pattern since the intention is to only use NPLBroker instance for direct NPL access
+function init(ctx) {
+    // Singelton pattern since the intention is to only use NPLBroker instance for direct NPL access.
+    // If the NPL broker instance has been initialized, return the broker's instance to the call,
+    // this ensures that the broker is accessible to all components of the HP dApp
     if (!instance) {
-        instance = new NPLBroker(mode, maxListeners, ctx);
+        instance = new NPLBroker(ctx);
     }
     return instance;
 }
@@ -465,6 +448,10 @@ class ControlChannel {
     }
 
     consume(onMessage) {
+
+        if (this.#readStream)
+            throw "Control channel already consumed.";
+
         this.#readStream = control_fs.createReadStream(null, { fd: this.#fd, highWaterMark: common.constants.MAX_SEQ_PACKET_SIZE });
         this.#readStream.on("data", onMessage);
         this.#readStream.on("error", (err) => { });
@@ -498,9 +485,12 @@ class NplChannel {
 
     consume(onMessage) {
 
+        if (this.#readStream)
+            throw "NPL channel already consumed.";
+
         this.#readStream = npl_fs.createReadStream(null, { fd: this.#fd, highWaterMark: common.constants.MAX_SEQ_PACKET_SIZE });
 
-        // From the hotpocket when sending the npl messages first it sends the public key of the particular node
+        // When hotpocket is sending the npl messages, first it sends the public key of the particular node
         // and then the message, First data buffer is taken as public key and the second one as message,
         // then npl message object is constructed and the event is emmited.
         let publicKey = null;
@@ -930,29 +920,38 @@ const HotPocket = __nccwpck_require__(875);
 const NPLBroker = __nccwpck_require__(277);
 
 async function contract(ctx) {
-    const NPL = NPLBroker.init({
-        mode: "public",
-        maxListeners: 2,
-        ctx: ctx
-    });
-
+    // initialize npl broker object
+    const NPL = NPLBroker.init(ctx);
+    
+    // initialize listener function
     const listener = (packet) => {
         // this is an independent event (NPL round) listener!
         console.log(`node "${packet.node}" sent "${packet.content}" ...`);
     }
 
+    // subscribe (listen) to event (npl round) with listener
     NPL.subscribeRound("TEST ROUND", listener);
 
+    // perform NPL round
+    // even if we don't subscribe to an npl round via `.subscribeRound()`, we will still receive an NPL round's results
     const test_NPL_round = await NPL.performNplRound({
         roundName: "TEST ROUND",
-        content: "Hi, this is 1 unique NPL response!",
-        desiredCount: ctx.unl.count(),
+        content: `This is a unique NPL message?! Random value: ${Math.floor(Math.random() * 100)}`,
+        desiredCount: 2,
+        timeout: 400
+    });
+    // even if we don't subscribe to an npl round via `.subscribeRound()`, we will still receive an NPL round's results
+    const test_NPL_roaund = await NPL.performNplRound({
+        roundName: "TEST ROUND",
+        content: `This is a unique NPL message?! Random value: ${Math.floor(Math.random() * 100)}`,
+        desiredCount: 2,
         timeout: 400
     });
 
+    // unsubscribe to npl round
     NPL.unsubscribeRound("TEST ROUND", listener);
     
-    console.log(`\nNPL round "${test_NPL_round.roundName}" finished with ${test_NPL_round.data.length} responses in ${test_NPL_round.timeTaken} ms\n`);
+    console.log(`\nNPL round "${test_NPL_round.roundName}" finished with ${test_NPL_round.record.length} responses in ${test_NPL_round.timeTaken} ms\n`);
 }
 
 const hpc = new HotPocket.Contract();
