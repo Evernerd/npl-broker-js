@@ -132,7 +132,7 @@ class NPLBroker extends EventEmitter {
 					roundName: roundName,
 					record: record,
 					desiredCount: desiredCount,
-                    desiredCountReached: record.length >= desiredCount,
+                    responseCount: record.length,
 					timeout: timeout,
 					timeTaken: undefined,
                     meanTime: undefined
@@ -143,7 +143,7 @@ class NPLBroker extends EventEmitter {
                     this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
                     response.timeTaken = roundTimeTaken,
-                    response.desiredCountReached = record.length >= desiredCount;
+                    response.responseCount = record.length;
 
                     var total = 0;
                     timeTakenNodes.forEach(timeTaken => {
@@ -174,7 +174,7 @@ class NPLBroker extends EventEmitter {
                             this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
                             response.timeTaken = finish - startingTime,
-                            response.desiredCountReached = record.length >= desiredCount;
+                            response.responseCount = record.length;
 
                             var total = 0;
                             timeTakenNodes.forEach(timeTaken => {
