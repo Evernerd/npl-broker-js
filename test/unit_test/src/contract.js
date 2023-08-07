@@ -22,7 +22,7 @@ async function testGetDesiredCount(ctx, NPL, roundName, timeout) {
 
         await delay(timeout - timeTaken);
 
-        if (test_NPL_round.desiredCountReached) { nplRoundscore++; }
+        if (test_NPL_round.responseCount === test_NPL_round.desiredCount) { nplRoundscore++; }
     }
     if (nplRoundscore === ctx.unl.count()) {
         console.log(` --  performNplRound() |              desiredCount threshold: ✅`);

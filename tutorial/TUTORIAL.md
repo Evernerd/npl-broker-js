@@ -66,7 +66,7 @@ async function contract(ctx) {
     // unsubscribe our previous `listener` from NPL round "TEST ROUND"
     NPL.unsubscribeRound("TEST ROUND", listener);
     
-    console.log(`\nNPL round "${test_NPL_round.roundName}" finished with ${test_NPL_round.data.length} responses in ${test_NPL_round.timeTaken} ms\n`);
+    console.log(`\nNPL round "${test_NPL_round.roundName}" finished with ${test_NPL_round.responseCount} responses in ${test_NPL_round.timeTaken} ms\n`);
 }
 
 const hpc = new HotPocket.Contract();
