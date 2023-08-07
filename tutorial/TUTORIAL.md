@@ -9,7 +9,6 @@ Here are all the available features on `npl-broker-js`:
 - init()
 - .subscribeRound()
 - .unsubscribeRound()
-- .getEvents()
 - .getRoundSubscribers()
 - .performNplRound()
 
