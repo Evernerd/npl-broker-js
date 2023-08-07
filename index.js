@@ -3,7 +3,7 @@ const EventEmitter = require("events");
 /**
  * NPL Broker for HotPocket applications.
  * @author Wo Jake & Mark
- * @version 0.2.0
+ * @version 1.2.0
  * @description A NPL brokerage system (EVS-01) for HotPocket dApps to manage their NPL rounds.
  * 
  * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
@@ -13,8 +13,6 @@ const EventEmitter = require("events");
 // init()
 // .subscribeRound()
 // .unsubscribeRound()
-// .getEvents()
-// .getRoundSubscribers()
 // .performNplRound()
 
 /**
@@ -22,15 +20,9 @@ const EventEmitter = require("events");
  */
 let instance;
 
-// DEV NOTE ON EventEmitter()
-// The EventEmitter calls all listeners synchronously in the order in which they were registered.
-// This ensures the proper sequencing of events and helps avoid race conditions and logic errors.
-// When appropriate, listener functions can switch to an asynchronous mode of operation using the setImmediate() or process.nextTick() methods.
-// hope this helps
-
 class NPLBroker extends EventEmitter {
     /**
-     * @param {*} ctx - The HotPocket instance's contract context.
+     * @param {*} ctx - The HotPocket contract's context.
      */
     constructor(ctx) {
         super();
@@ -53,12 +45,12 @@ class NPLBroker extends EventEmitter {
     /**
      * Subscribe to an NPL round name.
      * 
-     * @param {*} roundName - The NPL round name.
+     * @param {string} roundName - The NPL round name.
      * @param {Function} listener - The function that will be called per NPL message passing through the NPL round.
      */
     subscribeRound(roundName, listener) {
-        if (Object.prototype.toString.call(roundName) === '[object Date]') {
-            throw new Error(`roundName type is not valid, cannot be [object Date]`);
+        if (typeof roundName !== "string") {
+            throw new Error(`roundName type is not valid, must be string`);
         }
 
         this.on(roundName, listener);
@@ -67,39 +59,16 @@ class NPLBroker extends EventEmitter {
     /**
      * Remove a particular subscriber of an NPL round name, only *ONE* unique subscriber is removed per each call.
      * 
-     * @param {*} roundName - The NPL round name.
+     * @param {string} roundName - The NPL round name.
      * @param {Function} listener - The function that will be removed from the NPL round name.
      */
     unsubscribeRound(roundName, listener) {
-        if (Object.prototype.toString.call(roundName) === '[object Date]') {
-            throw new Error(`roundName type is not valid, cannot be [object Date]`);
+        if (typeof roundName !== "string") {
+            throw new Error(`roundName type is not valid, must be string`);
         }
         
         this.removeListener(roundName, listener);
     }
-
-    /**
-     * Returns an array listing the NPL round names that have live subscribers.
-     * 
-     * @returns {array}
-     */
-    getEvents() {
-        return this.eventNames();
-    };
-
-    /**
-     * Returns an array of subscribers of an NPL round name.
-     * 
-     * @param {*} roundName - The NPL round name.
-     * @returns {array}
-     */
-    getRoundSubscribers(roundName) {
-        if (Object.prototype.toString.call(roundName) === '[object Date]') {
-            throw new Error(`roundName field is not valid, cannot be [object Date]`);
-        }
-
-        return this.listeners(roundName);
-    };
 
     /**
      * Perform an NPL round to distribute and collect NPL messages from peers.
@@ -117,52 +86,48 @@ class NPLBroker extends EventEmitter {
         if (typeof desiredCount !== "number") {
             throw new Error(`desiredCount type is not valid, must be number`);
         }
+        if (desiredCount < 1) {
+            throw new Error(`desiredCount value is not valid, must be a number more than 1`);
+        }
         if (typeof timeout !== "number") {
             throw new Error(`timeout type is not valid, must be number`);
+        }
+        if (timeout < 1) {
+            throw new Error(`timeout value is not valid, must be a number more than 1`);
         }
 
         const NPL = (roundName, desiredCount, timeout, startingTime) => {
 			return new Promise((resolve) => {
-				var record = [],
-                    participants = [],
-                    timeTakenNodes = [];
-
-                // The object that will be returned to this function's caller
+				var record = [];
+                var participants = [];
+                
+                // The object that will be returned to this function's caller.
 				const response = {
-					roundName: roundName,
-					record: record,
-					desiredCount: desiredCount,
-                    responseCount: record.length,
-					timeout: timeout,
-					timeTaken: undefined,
-                    meanTime: undefined
-				};
+                    roundName: roundName,
+                    record: record,
+                    desiredCount: desiredCount,
+                    timeout: timeout,
+                    timeTaken: undefined,
+                };
 
 				const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
                     // Fire up the set timeout if we didn't receive enough NPL messages.
                     this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
-                    response.timeTaken = roundTimeTaken,
-                    response.responseCount = record.length;
-
-                    var total = 0;
-                    timeTakenNodes.forEach(timeTaken => {
-                        total += timeTaken;
-                    }),
-                    response.meanTime = total / timeTakenNodes.length;
+                    response.timeTaken = roundTimeTaken;
 
                     resolve(response);
 				}, timeout);
 
                 const LISTENER_NPL_ROUND_PLACEHOLDER = (packet, nodeTimeTaken = performance.now() - startingTime) => {
                     if (!participants.includes(packet.node)) {
-                        participants.push(packet.node),
+                        participants.push(packet.node);
                         record.push({
                             "roundName": roundName, 
-                            "node": packet.node, // the hotpocket node's public key
-                            "content": packet.content, // the NPL packet's data
-                            "timeTaken": nodeTimeTaken // the time taken for us to receive a response from *this* peer (data.node)
-                        }),
+                            "node": packet.node,
+                            "content": packet.content,
+                            "timeTaken": nodeTimeTaken
+                        });
                         timeTakenNodes.push(nodeTimeTaken);
 
                         // Resolve immediately if we have the desired no. of NPL messages.
@@ -173,15 +138,8 @@ class NPLBroker extends EventEmitter {
 
                             this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
-                            response.timeTaken = finish - startingTime,
-                            response.responseCount = record.length;
+                            response.timeTaken = finish - startingTime;
 
-                            var total = 0;
-                            timeTakenNodes.forEach(timeTaken => {
-                                total += timeTaken;
-                            });
-                            response.meanTime = total / timeTakenNodes.length;
-                            
                             resolve(response);
                         }
                     } else {
@@ -210,10 +168,10 @@ class NPLBroker extends EventEmitter {
 }
 
 /**
- * Initialize the NPLBroker class and return the NPL Broker instance.
+ * Initialize the NPLBroker class and/or return the NPL Broker instance.
  * Singelton pattern.
  * 
- * @param {object} ctx - The HotPocket instance's contract context.
+ * @param {object} ctx - The HotPocket contract's context.
  * @returns {object}
  */
 function init(ctx) {
