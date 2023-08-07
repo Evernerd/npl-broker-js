@@ -3,7 +3,7 @@ const EventEmitter = require("events");
 /**
  * NPL Broker for HotPocket applications.
  * @author Wo Jake & Mark
- * @version 1.2.0
+ * @version 1.2.1
  * @description A NPL brokerage system (EVS-01) for HotPocket dApps to manage their NPL rounds.
  * 
  * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
@@ -128,7 +128,6 @@ class NPLBroker extends EventEmitter {
                             "content": packet.content,
                             "timeTaken": nodeTimeTaken
                         });
-                        timeTakenNodes.push(nodeTimeTaken);
 
                         // Resolve immediately if we have the desired no. of NPL messages.
                         if (record.length === desiredCount) {
