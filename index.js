@@ -103,18 +103,40 @@ class NPLBroker extends EventEmitter {
                 
                 // The object that will be returned to this function's caller.
 				const response = {
+<<<<<<< HEAD
                     roundName: roundName,
                     record: record,
                     desiredCount: desiredCount,
                     timeout: timeout,
                     timeTaken: undefined,
                 };
+=======
+					roundName: roundName,
+					record: record,
+					desiredCount: desiredCount,
+                    responseCount: record.length,
+					timeout: timeout,
+					timeTaken: undefined,
+                    meanTime: undefined
+				};
+>>>>>>> e78ded6da152813c4931dd65fc117a119109f12f
 
 				const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
                     // Fire up the set timeout if we didn't receive enough NPL messages.
                     this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
+<<<<<<< HEAD
                     response.timeTaken = roundTimeTaken;
+=======
+                    response.timeTaken = roundTimeTaken,
+                    response.responseCount = record.length;
+
+                    var total = 0;
+                    timeTakenNodes.forEach(timeTaken => {
+                        total += timeTaken;
+                    }),
+                    response.meanTime = total / timeTakenNodes.length;
+>>>>>>> e78ded6da152813c4931dd65fc117a119109f12f
 
                     resolve(response);
 				}, timeout);
@@ -138,7 +160,18 @@ class NPLBroker extends EventEmitter {
 
                             this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
+<<<<<<< HEAD
                             response.timeTaken = finish - startingTime;
+=======
+                            response.timeTaken = finish - startingTime,
+                            response.responseCount = record.length;
+
+                            var total = 0;
+                            timeTakenNodes.forEach(timeTaken => {
+                                total += timeTaken;
+                            });
+                            response.meanTime = total / timeTakenNodes.length;
+>>>>>>> e78ded6da152813c4931dd65fc117a119109f12f
                             
                             resolve(response);
                         }
