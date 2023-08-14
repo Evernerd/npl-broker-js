@@ -10,16 +10,16 @@ import EventEmitter from "events";
  */
 
 interface NPL_ROUND_RESULT {
-  roundName: string;
-  record: {
     roundName: string;
-    node: string;
-    content: any;
-    timeTaken: number;
-  }[];
-  desiredCount: number;
-  timeout: number;
-  timeTaken: number
+    record: {
+        roundName: string;
+        node: string;
+        content: any;
+        timeTaken: number;
+    }[];
+    desiredCount: number;
+    timeout: number;
+    timeTaken: number
 }
 
 type UnlNode = any // hotpocket-nodejs-contract
@@ -49,12 +49,12 @@ class NPLBroker extends EventEmitter {
         /**
          * Turn on the NPL channel on this HP instance.
          */
-        ctx.unl.onMessage((node: UnlNode, payload: any, {roundName, content} = JSON.parse(payload)) => {
+        ctx.unl.onMessage((node: UnlNode, payload: any, { roundName, content } = JSON.parse(payload)) => {
             this.emit(roundName, {
                 node: node.publicKey,
                 content: content
             });
-		});
+        });
 
         this.setMaxListeners(Infinity);
     }
@@ -83,7 +83,7 @@ class NPLBroker extends EventEmitter {
         if (typeof roundName !== "string") {
             throw new Error(`roundName type is not valid, must be string`);
         }
-        
+
         this.removeListener(roundName, listener);
     }
 
@@ -114,12 +114,12 @@ class NPLBroker extends EventEmitter {
         }
 
         const NPL = (roundName: string, desiredCount: number, timeout: number, startingTime: number) => {
-        return new Promise<NPL_ROUND_RESULT>((resolve,reject) => {
-        var record: NPL_ROUND_RESULT['record'] = [];
-        var participants: string[] = [];
-                
+            return new Promise<NPL_ROUND_RESULT>((resolve, reject) => {
+                var record: NPL_ROUND_RESULT['record'] = [];
+                var participants: string[] = [];
+
                 // The object that will be returned to this function's caller.
-        const response: NPL_ROUND_RESULT = {
+                const response: NPL_ROUND_RESULT = {
                     roundName: roundName,
                     record: record,
                     desiredCount: desiredCount,
@@ -127,20 +127,20 @@ class NPLBroker extends EventEmitter {
                     timeTaken: undefined as unknown as number,
                 };
 
-        const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
+                const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
                     // Fire up the set timeout if we didn't receive enough NPL messages.
                     this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
                     response.timeTaken = roundTimeTaken;
 
                     resolve(response);
-        }, timeout);
+                }, timeout);
 
                 const LISTENER_NPL_ROUND_PLACEHOLDER = (packet: any, nodeTimeTaken = performance.now() - startingTime) => {
                     if (!participants.includes(packet.node)) {
                         participants.push(packet.node);
                         record.push({
-                            "roundName": roundName, 
+                            "roundName": roundName,
                             "node": packet.node,
                             "content": packet.content,
                             "timeTaken": nodeTimeTaken
@@ -159,15 +159,15 @@ class NPLBroker extends EventEmitter {
                             resolve(response);
                         }
                     } else {
-                      reject(new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
+                        reject(new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
                     }
-				}
+                }
 
                 // Temporarily subscribe to the NPL round name
                 // `LISTENER_NPL_ROUND_PLACEHOLDER` is the function that will be handling all emits (NPL messages)
-				this.on(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
-			});
-		};
+                this.on(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
+            });
+        };
 
         await this._ctx.unl.send(JSON.stringify({
             roundName: roundName,
