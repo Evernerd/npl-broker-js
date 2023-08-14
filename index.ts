@@ -1,4 +1,4 @@
-const EventEmitter = require("events");
+import EventEmitter from "events";
 
 /**
  * NPL Broker for HotPocket applications.
@@ -9,6 +9,22 @@ const EventEmitter = require("events");
  * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
  */
 
+interface NPL_ROUND_RESULT {
+  roundName: string;
+  record: {
+    roundName: string;
+    node: string;
+    content: any;
+    timeTaken: number;
+  }[];
+  desiredCount: number;
+  timeout: number;
+  timeTaken: number
+}
+
+type UnlNode = any // hotpocket-nodejs-contract
+type ContractContext = any // hotpocket-nodejs-contract
+
 // -- FUNCTIONS --
 // init()
 // .subscribeRound()
@@ -18,13 +34,14 @@ const EventEmitter = require("events");
 /**
  * The NPL Broker instance.
  */
-let instance;
+let instance: NPLBroker;
 
 class NPLBroker extends EventEmitter {
+    _ctx: ContractContext;
     /**
      * @param {*} ctx - The HotPocket contract's context.
      */
-    constructor(ctx) {
+    constructor(ctx: ContractContext) {
         super();
 
         this._ctx = ctx;
@@ -32,7 +49,7 @@ class NPLBroker extends EventEmitter {
         /**
          * Turn on the NPL channel on this HP instance.
          */
-        ctx.unl.onMessage((node, payload, {roundName, content} = JSON.parse(payload)) => {
+        ctx.unl.onMessage((node: UnlNode, payload: any, {roundName, content} = JSON.parse(payload)) => {
             this.emit(roundName, {
                 node: node.publicKey,
                 content: content
@@ -48,7 +65,7 @@ class NPLBroker extends EventEmitter {
      * @param {string} roundName - The NPL round name.
      * @param {Function} listener - The function that will be called per NPL message passing through the NPL round.
      */
-    subscribeRound(roundName, listener) {
+    subscribeRound(roundName: string, listener: (...args: any[]) => void) {
         if (typeof roundName !== "string") {
             throw new Error(`roundName type is not valid, must be string`);
         }
@@ -62,7 +79,7 @@ class NPLBroker extends EventEmitter {
      * @param {string} roundName - The NPL round name.
      * @param {Function} listener - The function that will be removed from the NPL round name.
      */
-    unsubscribeRound(roundName, listener) {
+    unsubscribeRound(roundName: string, listener: (...args: any[]) => void) {
         if (typeof roundName !== "string") {
             throw new Error(`roundName type is not valid, must be string`);
         }
@@ -79,7 +96,7 @@ class NPLBroker extends EventEmitter {
      * @param {number} timeout - The time interval given to this NPL round to conclude.
      * @returns {object}
      */
-    async performNplRound({roundName, content, desiredCount, timeout}, startingTime = performance.now()) {
+    async performNplRound({ roundName, content, desiredCount, timeout }: { roundName: string, content: any, desiredCount: number, timeout: number }, startingTime = performance.now()) {
         if (typeof roundName !== "string") {
             throw new Error(`roundName type is not valid, must be string`);
         }
@@ -96,30 +113,30 @@ class NPLBroker extends EventEmitter {
             throw new Error(`timeout value is not valid, must be a number more than 1`);
         }
 
-        const NPL = (roundName, desiredCount, timeout, startingTime) => {
-			return new Promise((resolve) => {
-				var record = [];
-                var participants = [];
+        const NPL = (roundName: string, desiredCount: number, timeout: number, startingTime: number) => {
+        return new Promise<NPL_ROUND_RESULT>((resolve,reject) => {
+        var record: NPL_ROUND_RESULT['record'] = [];
+        var participants: string[] = [];
                 
                 // The object that will be returned to this function's caller.
-				const response = {
+        const response: NPL_ROUND_RESULT = {
                     roundName: roundName,
                     record: record,
                     desiredCount: desiredCount,
                     timeout: timeout,
-                    timeTaken: undefined,
+                    timeTaken: undefined as unknown as number,
                 };
 
-				const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
+        const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
                     // Fire up the set timeout if we didn't receive enough NPL messages.
                     this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
                     response.timeTaken = roundTimeTaken;
 
                     resolve(response);
-				}, timeout);
+        }, timeout);
 
-                const LISTENER_NPL_ROUND_PLACEHOLDER = (packet, nodeTimeTaken = performance.now() - startingTime) => {
+                const LISTENER_NPL_ROUND_PLACEHOLDER = (packet: any, nodeTimeTaken = performance.now() - startingTime) => {
                     if (!participants.includes(packet.node)) {
                         participants.push(packet.node);
                         record.push({
@@ -142,7 +159,7 @@ class NPLBroker extends EventEmitter {
                             resolve(response);
                         }
                     } else {
-                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
+                      reject(new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
                     }
 				}
 
@@ -173,7 +190,7 @@ class NPLBroker extends EventEmitter {
  * @param {object} ctx - The HotPocket contract's context.
  * @returns {object}
  */
-function init(ctx) {
+function init(ctx: ContractContext) {
     // Singelton pattern since the intention is to only use NPLBroker instance for direct NPL access.
     // If the NPL broker instance has been initialized, return the broker's instance to the call,
     // this ensures that the broker is accessible to all components of the HP dApp
@@ -183,7 +200,7 @@ function init(ctx) {
     return instance;
 }
 
-module.exports = {
+export {
     init
 };
 
