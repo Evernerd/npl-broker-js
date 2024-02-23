@@ -1,10 +1,10 @@
 {
   "name": "npl-broker",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "A NPL brokerage standard (EVS01) implemented on NodeJS for HotPocket instances to manage their NPL rounds in a systematic manner.",
   "main": "index.js",
   "scripts": {
-    "test": "sudo hpdevkit clean && sudo npm link && cd test/general/src && sudo npm link npl-broker && sudo HP_CLUSTER_SIZE=10 npm start"
+    "test": "sudo hpdevkit clean && sudo npm link && cd test/unit_test/src && sudo npm link npl-broker && sudo HP_CLUSTER_SIZE=6 npm start"
   },
   "repository": {
     "type": "git",
@@ -22,6 +22,9 @@
   },
   "homepage": "https://github.com/Evernerd/npl-broker-js#readme",
   "devDependencies": {
-    "hpdevkit": "^0.6.1"
+    "hpdevkit": "^0.6.5"
+  },
+  "dependencies": {
+    "events": "^3.3.0"
   }
 }

@@ -22,12 +22,13 @@ async function testGetDesiredCount(ctx, NPL, roundName, timeout) {
 
         await delay(timeout - timeTaken);
 
-        if (test_NPL_round.responseCount === test_NPL_round.desiredCount) { nplRoundscore++; }
+        if (test_NPL_round.record.length === test_NPL_round.desiredCount) { nplRoundscore++; }
     }
     if (nplRoundscore === ctx.unl.count()) {
         console.log(` --  performNplRound() |              desiredCount threshold: ✅`);
         return true;
     } else {
+        console.log(` --  performNplRound() |              desiredCount threshold: ❌ (${nplRoundscore}/${ctx.unl.count()})`);
         return false;
     }
 }
@@ -99,7 +100,7 @@ async function contract(ctx) {
         }
     })
 
-    console.log(`\n --- UNIT TEST SCORE: ${score} / ${tests.length}`);
+    console.log(`\n --- UNIT TEST SCORE: ${score} / ${tests.length}\n\n`);
 }
 
 const hpc = new HotPocket.Contract();
