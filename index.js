@@ -3,7 +3,7 @@ const EventEmitter = require("events");
 /**
  * NPL Broker for HotPocket applications.
  * @author Wo Jake & Mark
- * @version 1.2.1
+ * @version 1.2.2
  * @description A NPL brokerage system (EVS-01) for HotPocket dApps to manage their NPL rounds.
  * 
  * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
@@ -32,10 +32,11 @@ class NPLBroker extends EventEmitter {
         /**
          * Turn on the NPL channel on this HP instance.
          */
-        ctx.unl.onMessage((node, payload, {roundName, content} = JSON.parse(payload)) => {
+        ctx.unl.onMessage((node, payload, timeTaken = performance.now(), {roundName, content} = JSON.parse(payload)) => {
             this.emit(roundName, {
                 node: node.publicKey,
-                content: content
+                content: content,
+                timeTaken: timeTaken
             });
 		});
 
@@ -89,6 +90,9 @@ class NPLBroker extends EventEmitter {
         if (desiredCount < 1) {
             throw new Error(`desiredCount value is not valid, must be a number more than 1`);
         }
+        if (!Number.isInteger(desiredCount)) {
+            throw new Error(`desiredCount value is not valid, must be a whole number`);
+        }
         if (typeof timeout !== "number") {
             throw new Error(`timeout type is not valid, must be number`);
         }
@@ -107,10 +111,10 @@ class NPLBroker extends EventEmitter {
                     record: record,
                     desiredCount: desiredCount,
                     timeout: timeout,
-                    timeTaken: undefined,
+                    timeTaken: undefined
                 };
 
-				const timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
+				let timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
                     // Fire up the set timeout if we didn't receive enough NPL messages.
                     this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
 
@@ -119,11 +123,11 @@ class NPLBroker extends EventEmitter {
                     resolve(response);
 				}, timeout);
 
-                const LISTENER_NPL_ROUND_PLACEHOLDER = (packet, nodeTimeTaken = performance.now() - startingTime) => {
+                const LISTENER_NPL_ROUND_PLACEHOLDER = (packet, nodeTimeTaken = packet.timeTaken - startingTime) => {
                     if (!participants.includes(packet.node)) {
                         participants.push(packet.node);
                         record.push({
-                            "roundName": roundName, 
+                            "roundName": roundName,
                             "node": packet.node,
                             "content": packet.content,
                             "timeTaken": nodeTimeTaken
@@ -142,7 +146,7 @@ class NPLBroker extends EventEmitter {
                             resolve(response);
                         }
                     } else {
-                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
+                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap`));
                     }
 				}
 
