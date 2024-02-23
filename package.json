@@ -1,6 +1,6 @@
 {
   "name": "npl-broker",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "description": "A NPL brokerage standard (EVS01) implemented on NodeJS for HotPocket instances to manage their NPL rounds in a systematic manner.",
   "main": "index.js",
   "scripts": {
