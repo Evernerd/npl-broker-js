@@ -111,7 +111,7 @@ class NPLBroker extends EventEmitter {
                     record: record,
                     desiredCount: desiredCount,
                     timeout: timeout,
-                    timeTaken: undefined,
+                    timeTaken: undefined
                 };
 
 				let timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
@@ -127,10 +127,10 @@ class NPLBroker extends EventEmitter {
                     if (!participants.includes(packet.node)) {
                         participants.push(packet.node);
                         record.push({
-                            "roundName": roundName, 
+                            "roundName": roundName,
                             "node": packet.node,
                             "content": packet.content,
-                            "timeTaken": nodeTimeTaken,
+                            "timeTaken": nodeTimeTaken
                         });
 
                         // Resolve immediately if we have the desired no. of NPL messages.
@@ -146,7 +146,7 @@ class NPLBroker extends EventEmitter {
                             resolve(response);
                         }
                     } else {
-                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
+                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap`));
                     }
 				}
 
