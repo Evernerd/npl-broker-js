@@ -1,15 +1,43 @@
 const HotPocket = require('hotpocket-nodejs-contract');
 const NPLBroker = require('npl-broker');
+const crypto = require('crypto');
+const fs = require('fs');
 
 async function delay(ms) {
     return await new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
+ * Check if the broker's NPL stream works as intended
+ */
+async function testNplStream(ctx, NPL, NplStream, messageCount, timeout) {
+    while (messageCount > 0) {
+        // Test JSON
+        await NPL.send(JSON.stringify({
+            content: "dinner with Jay Z or dinner with Bharath 321 @#$",
+            randomNumber: 123589,
+            randomBoolean: true,
+            randomArray: ["JayZ", "Bharath"]
+        }));        
+        // Test string
+        await NPL.send("dinner with Jay Z or dinner with Bharath 321 @#$");
+        // Test number
+        await NPL.send(1234567890);
+        // Test boolean
+        await NPL.send(true);
+        // Test array
+        await NPL.send(["Wo", "Jake", "is", "awesome", 3000, true]);
+        // Test object
+        await NPL.send({"hot":"pocket", "variable": 123, "bool": true});
+        messageCount--;
+    }    
+}
+
+/**
  * Check if we could get the precise number of desired NPL messages
  */
 async function testGetDesiredCount(ctx, NPL, roundName, timeout) {
-    var nplRoundscore = 0;
+    var point = 0;
     for (let x = 0; x < ctx.unl.count(); x++) {    
         const start = performance.now();
         const test_NPL_round = await NPL.performNplRound({
@@ -22,13 +50,13 @@ async function testGetDesiredCount(ctx, NPL, roundName, timeout) {
 
         await delay(timeout - timeTaken);
 
-        if (test_NPL_round.record.length === test_NPL_round.desiredCount) { nplRoundscore++; }
+        if (test_NPL_round.record.length === test_NPL_round.desiredCount) { point++; }
     }
-    if (nplRoundscore === ctx.unl.count()) {
+    if (point === ctx.unl.count()) {
         console.log(` --  performNplRound() |              desiredCount threshold: ✅`);
         return true;
     } else {
-        console.log(` --  performNplRound() |              desiredCount threshold: ❌ (${nplRoundscore}/${ctx.unl.count()})`);
+        console.log(` --  performNplRound() |              desiredCount threshold: ❌ (${point}/${ctx.unl.count()})`);
         return false;
     }
 }
@@ -70,32 +98,109 @@ async function testTriggerOverlappingNplRoundError(ctx, NPL, roundName, timeout)
         console.log(` --  performNplRound() |       avoided overlapping NPL round: ✅`)
         return true;
     }
+    console.log(` --  performNplRound() |  didn't avoid overlapping NPL round: ❌`)
     return false;
+}
+
+
+/**
+ * Check if the checksum is valid, verify the content's integrity on the sender's side 
+ */
+async function testGetValidChecksum(ctx, NPL, roundName, timeout) {
+    const test_NPL_round = await NPL.performNplRound({
+        roundName: roundName,
+        content: "test content 312 _-= !@# ABC abc",
+        desiredCount: ctx.unl.count(),
+        checksum: true,
+        timeout: timeout
+    });
+
+    var point = 0;
+    test_NPL_round.record.forEach(message => {
+        if (message.checksum === crypto.createHash('sha256').update(message.content).digest('hex')) {
+            point++;
+        }
+    })
+
+    if (point > 0) {
+        console.log(` --  performNplRound() |                   checksum is valid: ✅`);
+        return true;
+    } else {
+        console.log(` --  performNplRound() |                 checksum is invalid: ❌`);
+        return false;
+    }
+}
+
+/** 
+ * Check if our large content enables chunk transfer
+ */
+async function testTriggerChunkTransfer(ctx, NPL, roundName, timeout) {
+    const string_size_270k_characters = fs.readFileSync(__dirname+"/large.txt", 'utf8');
+    
+    const test_NPL_round = await NPL.performNplRound({
+        roundName: roundName,
+        content: string_size_270k_characters,
+        desiredCount: ctx.unl.count() / 2,
+        timeout: timeout
+    });
+    
+    var point = 0;
+    test_NPL_round.record.forEach(NPLResponse => {
+        if (NPLResponse.content.length === string_size_270k_characters.length) point++;
+    });
+
+    if (point > 0) {
+        console.log(` --  performNplRound() |           chunk transfer successful: ✅`);
+        return true;
+    } else {
+        console.log(` --  performNplRound() |         chunk transfer unsuccessful: ❌`);
+        return false
+    }
 }
 
 async function contract(ctx) {
     // NPL-Broker unit test
 
-    // variables
-    const roundName = "testNplBroker";
-    const timeout = 1000; // ms
     var score = 0;
+    var messageCount = 2;
 
-    console.log(`\n npl-broker-js' UNIT TEST (2 tests):`);
-    console.log(`    UNL count: ${ctx.unl.count()}`);
+    console.log(`\n npl-broker-js' UNIT TEST (5 tests):`);
+    console.log(`    UNL count: ${ctx.unl.count()}\n`);
+
+    var nplMessageCount = 0;
+    const LISTENER_STREAM = (packet) => {
+        nplMessageCount++;
+    }
 
     // initialize npl-broker class
-    const NPL = NPLBroker.init(ctx);
-    
-    // UNIT TEST #1 : hitting the correct desiredCount threshold @ performNplRound() 
-    const T1 = await testGetDesiredCount(ctx, NPL, roundName, timeout);
+    const NPL = NPLBroker.init(ctx, LISTENER_STREAM);
 
-    // UNIT TEST #2 : hit an overlapping NPL round to trigger error @ performNplRound()
-    const T2 = await testTriggerOverlappingNplRoundError(ctx, NPL, roundName, timeout);
+    // UNIT TEST #1 : using the broker's NPL stream
+    const T1 = await testNplStream(ctx, NPL, LISTENER_STREAM, messageCount, 2000);
 
-    const tests = [T1, T2];
-    tests.forEach(test => {
-        if (test) {
+    await delay(1000);
+    if (nplMessageCount > 0) {
+        console.log(` --  NPL msg stream () |                  NPL stream working: ✅`);
+        score++;
+    } else {
+        console.log(` --  NPL msg stream () |              NPL stream not working: ❌`);
+    }
+
+    // UNIT TEST #2 : hitting the correct desiredCount threshold @ performNplRound() 
+    const T2 = await testGetDesiredCount(ctx, NPL, "NPLGetDesiredCount", 3000);
+
+    // UNIT TEST #3 : hit an overlapping NPL round to trigger error @ performNplRound()
+    const T3 = await testTriggerOverlappingNplRoundError(ctx, NPL, "NPLTriggerOverlappingRound", 1000);
+
+    // UNIT TEST #4 : checksum is valid on sender's side (Content Integrity)
+    const T4 = await testGetValidChecksum(ctx, NPL, "NPLGetValidChecksum", 3000)
+
+    // UNIT TEST #5 : enable chunk transfer
+    const T5 = await testTriggerChunkTransfer(ctx, NPL, "NPLTriggerChunkTransfer", 5000);
+
+    const tests = [T1, T2, T3, T4, T5];
+    tests.forEach(result => {
+        if (result) {
             score++;
         }
     })

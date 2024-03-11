@@ -1,5 +1,7 @@
 # npl-broker-js tutorial
 
+## SLIGHTLY OUTDATED - WE"LL CHANGE THIS SOON (TM)
+
 `npl-broker-js` is a library that you could easily plug into. The library follows a OOP approach, in which, devs must initialize the object before being able to utilize it.
 
 `npl-broker-js` is essentially an [EventEmitter](https://nodejs.dev/en/learn/the-nodejs-event-emitter/) wrapper tailor made to manage HotPocket's NPL channel.
