@@ -5,15 +5,16 @@
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 const EventEmitter = __nccwpck_require__(361);
+const crypto = __nccwpck_require__(113);
 
 /**
- * NPL Broker for HotPocket applications.
- * @author Wo Jake & Mark
- * @version 1.2.2
- * @description A NPL brokerage system (EVS-01) for HotPocket dApps to manage their NPL rounds.
- * 
- * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
- */
+* NPL Broker for HotPocket applications.
+* @author Wo Jake & Mark
+* @version 1.2.2
+* @description A NPL brokerage module (EVS-01) for HotPocket dApps to manage their NPL rounds.
+* 
+* See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
+*/
 
 // -- FUNCTIONS --
 // init()
@@ -21,54 +22,57 @@ const EventEmitter = __nccwpck_require__(361);
 // .unsubscribeRound()
 // .performNplRound()
 
+// Chunk transfer reference: https://datatracker.ietf.org/doc/html/rfc9112#section-7.1
+
 /**
- * The NPL Broker instance.
- */
+* The NPL Broker instance.
+*/
 let instance;
 
 class NPLBroker extends EventEmitter {
     /**
-     * @param {*} ctx - The HotPocket contract's context.
-     */
+    * @param {*} ctx - The HotPocket contract's context.
+    */
     constructor(ctx) {
         super();
-
+        
         this._ctx = ctx;
-
+        
         /**
-         * Turn on the NPL channel on this HP instance.
-         */
-        ctx.unl.onMessage((node, payload, timeTaken = performance.now(), {roundName, content} = JSON.parse(payload)) => {
+        * Turn on the NPL channel on this HP instance.
+        */
+        ctx.unl.onMessage((node, payload, timeTaken = performance.now(), {roundName, chunkID, content} = JSON.parse(payload)) => {
             this.emit(roundName, {
                 node: node.publicKey,
+                chunkID: chunkID,
                 content: content,
                 timeTaken: timeTaken
             });
-		});
-
+        });
+        
         this.setMaxListeners(Infinity);
     }
-
+    
     /**
-     * Subscribe to an NPL round name.
-     * 
-     * @param {string} roundName - The NPL round name.
-     * @param {Function} listener - The function that will be called per NPL message passing through the NPL round.
-     */
+    * Subscribe to an NPL round name.
+    * 
+    * @param {string} roundName - The NPL round name.
+    * @param {Function} listener - The function that will be called per NPL message passing through the NPL round.
+    */
     subscribeRound(roundName, listener) {
         if (typeof roundName !== "string") {
             throw new Error(`roundName type is not valid, must be string`);
         }
-
+        
         this.on(roundName, listener);
     }
-
+    
     /**
-     * Remove a particular subscriber of an NPL round name, only *ONE* unique subscriber is removed per each call.
-     * 
-     * @param {string} roundName - The NPL round name.
-     * @param {Function} listener - The function that will be removed from the NPL round name.
-     */
+    * Remove a particular subscriber of an NPL round name, only *ONE* unique subscriber is removed per each call.
+    * 
+    * @param {string} roundName - The NPL round name.
+    * @param {Function} listener - The function that will be removed from the NPL round name.
+    */
     unsubscribeRound(roundName, listener) {
         if (typeof roundName !== "string") {
             throw new Error(`roundName type is not valid, must be string`);
@@ -76,17 +80,17 @@ class NPLBroker extends EventEmitter {
         
         this.removeListener(roundName, listener);
     }
-
+    
     /**
-     * Perform an NPL round to distribute and collect NPL messages from peers.
-     * 
-     * @param {string} roundName - The NPL round name. This *must* be unique.
-     * @param {*} content - The content that will be distributed to this instance's peers.
-     * @param {number} desiredCount - The desired count of NPL messages to collect.
-     * @param {number} timeout - The time interval given to this NPL round to conclude.
-     * @returns {object}
-     */
-    async performNplRound({roundName, content, desiredCount, timeout}, startingTime = performance.now()) {
+    * Perform an NPL round to distribute and collect NPL messages from peers.
+    * 
+    * @param {string} roundName - The NPL round name. This *must* be unique.
+    * @param {*} content - The content that will be distributed to this instance's peers.
+    * @param {number} desiredCount - The desired count of NPL messages to collect.
+    * @param {number} timeout - The time interval given to this NPL round to conclude.
+    * @returns {object}
+    */
+    async performNplRound({roundName, content, desiredCount, timeout, checksum, /**retransmission*/}, startingTime = performance.now()) {
         if (typeof roundName !== "string") {
             throw new Error(`roundName type is not valid, must be string`);
         }
@@ -105,69 +109,190 @@ class NPLBroker extends EventEmitter {
         if (timeout < 1) {
             throw new Error(`timeout value is not valid, must be a number more than 1`);
         }
-
+        if (checksum !== undefined && typeof checksum !== Boolean) {
+            throw new Error(`checksum type is not valid, must be boolean`);
+        }
+        // if (retransmission !== false || retransmission !== true) {
+        //     throw new Error(`retransmission type is not valid, must be boolean`);
+        // }
+        
         const NPL = (roundName, desiredCount, timeout, startingTime) => {
-			return new Promise((resolve) => {
-				var record = [];
+            return new Promise((resolve) => {
+                /** Record of full NPL messages */
+                var record = [];
+                /** Record of all NPL participants in that round */
                 var participants = [];
+                /** Chunked messages awaiting to be combined once fully received entire message */
+                var message_chunks = {};
+                /** An indicator to tell if the node is receiving chunked messages, enabling chunk transfer mechanism */
+                var chunked_transfer = false;
                 
-                // The object that will be returned to this function's caller.
-				const response = {
+                /** The object that will be returned to this function's caller. */
+                const response = {
                     roundName: roundName,
                     record: record,
                     desiredCount: desiredCount,
                     timeout: timeout,
-                    timeTaken: undefined,
+                    timeTaken: undefined
                 };
-
-				let timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
+                
+                let timer = setTimeout((roundTimeTaken = performance.now() - startingTime) => {
                     // Fire up the set timeout if we didn't receive enough NPL messages.
                     this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
-
+                    
                     response.timeTaken = roundTimeTaken;
-
+                    
                     resolve(response);
-				}, timeout);
-
+                }, timeout);
+                
                 const LISTENER_NPL_ROUND_PLACEHOLDER = (packet, nodeTimeTaken = packet.timeTaken - startingTime) => {
-                    if (!participants.includes(packet.node)) {
-                        participants.push(packet.node);
-                        record.push({
-                            "roundName": roundName, 
-                            "node": packet.node,
-                            "content": packet.content,
-                            "timeTaken": nodeTimeTaken,
-                        });
+                    if (!participants.includes(packet.node) || packet.chunkID !== undefined) {
+                        if (!participants.includes(packet.node)) {
+                            participants.push(packet.node);
+                        }
+                        if (packet.chunkID !== undefined) {
+                            chunked_transfer = true;
+                        }
+                        
+                        if (!chunked_transfer) {
+                            // Whole message transmitted
+                            record.push({
+                                "roundName": roundName,
+                                "node": packet.node,
+                                "content": packet.content,
+                                "timeTaken": nodeTimeTaken
+                            });
+                        } else {
+                            // Chunked messages
+                            if (message_chunks[packet.node] === undefined) {
+                                message_chunks[packet.node] = [];
+                            }
 
+                            if (packet.content !== null) {
+                                message_chunks[packet.node].push(packet.content);
+                            } else {
+                                // Last chunk message indicating the end of the chunk transfer
+                                if (message_chunks[packet.node].length === Number(packet.chunkID)) {
+                                    record.push({
+                                        "roundName": roundName,
+                                        "node": packet.node,
+                                        "content": message_chunks[packet.node].join(''),
+                                        "timeTaken": nodeTimeTaken
+                                    })
+                                } // else if (packet.retransmission === true) {
+                                //     // Assess which chunk packet was lost via ChunkID check & request for a retransmission of the lost messages
+                                
+                                //     /** REMOVABLE NOTE:
+                                //     * Depending on how HotPocket is developed in the future for an ACK mechanism,
+                                //     * We may need to change (improve!) how we handle packet retransmission (fallback mode).
+                                //     */
+                                
+                                //     var _sequence_check = 0;
+                                //     var lost_chunkID = [];
+                                
+                                //     message_chunks[packet.node].forEach(chunk => {
+                                //         if (Number(chunk.sequence) === _sequence_check) {
+                                //             full_message = full_message+chunk.content;
+                                //         } else {
+                                //             lost_chunkID.push(_sequence_check);
+                                //         }
+                                //         _sequence_check++;
+                                //         console.log("Lost chunks (by ID):", lost_chunkID);
+                                //     });
+                                
+                                //     // DEV NOT: (ADD) We are supposed to send the missing chunks to the sender & request retranmission.
+                                // }
+                            }
+                        }
+                        
                         // Resolve immediately if we have the desired no. of NPL messages.
                         if (record.length === desiredCount) {
                             clearTimeout(timer);
-
+                            
                             const finish = performance.now();
-
+                            
                             this.removeListener(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
-
+                            
                             response.timeTaken = finish - startingTime;
-
+                            
                             resolve(response);
                         }
                     } else {
-                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap.`));
+                        resolve (new Error(`${packet.node} sent more than 1 message in NPL round "${roundName}". Potentially an NPL round overlap`));
                     }
-				}
-
+                }
+                
                 // Temporarily subscribe to the NPL round name
                 // `LISTENER_NPL_ROUND_PLACEHOLDER` is the function that will be handling all emits (NPL messages)
-				this.on(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
-			});
-		};
-
-        await this._ctx.unl.send(JSON.stringify({
+                this.on(roundName, LISTENER_NPL_ROUND_PLACEHOLDER);
+            });
+        };
+        
+        if (checksum) {
+            // If checksum is true, we'll hash the content for the recipient to be able to verify the content's integrity 
+            var checksum_hash = crypto.createHash('sha256').update(content).digest('hex');
+        }
+        
+        let npl_message = {
             roundName: roundName,
-            content: content
-        }));
-        const NPL_round_result = await NPL(roundName, desiredCount, timeout, startingTime);
+            content: content,
+            checksum: checksum_hash
+        }
+        
+        try {
+            const _npl_submission = await this._ctx.unl.send(JSON.stringify(npl_message));
+        } catch (err) {
+            // If it is a recognized error (NPL message size is too large), we proceed with chunk transfer
+            this.size_limit = Number(err.replace(/\D/g, '')) - 60; // (the npl message size limit - JSON format size)
+            
+            console.log(this.size_limit+60)
+            if (npl_message.roundName.length > this.size_limit) {
+                throw new Error(`roundName size is too big`);
+            }
+            
+            let message_chunks = [];
+            let npl_packets = [];
+            var maxMessageSize = this.size_limit-roundName.length;
 
+            while (npl_message.content.length > 0) {
+                message_chunks.push(npl_message.content.slice(0, maxMessageSize));
+                npl_message.content = npl_message.content.slice(maxMessageSize);
+            }
+
+            // We divide the NPL message into multiple segments & submit them in chunks
+            message_chunks.forEach((message, index) => {
+                if (checksum) {
+                    var checksum_hash = crypto.createHash('sha256').update(message).digest('hex');
+                }
+
+                if (index !== message_chunks.length - 1) {                
+                    npl_packets.push({
+                        roundName: roundName,
+                        chunkID: npl_packets.length.toString().padStart(4, "0"),
+                        content: message,
+                        checksum: checksum_hash
+                    });
+                } else {
+                    /** The last chunk packet is empty as it is used to verify that the chunk transfer is finished,
+                    *   The checksum is used to verify the entire transfer's content integrity
+                    */
+                    npl_packets.push({
+                        roundName: roundName,
+                        chunkID: npl_packets.length.toString().padStart(4, "0"),
+                        // retransmission: retransmission,
+                        content: null,
+                        checksum: crypto.createHash('sha256').update(message_chunks.join('')).digest('hex')
+                    });
+                }
+            })
+            
+            npl_packets.forEach(async (element) => {
+                const _npl_submission = await this._ctx.unl.send(JSON.stringify(element));
+            })
+        }
+        
+        const NPL_round_result = await NPL(roundName, desiredCount, timeout, startingTime);
+        
         if (NPL_round_result instanceof Error) {
             throw NPL_round_result;
         } else {
@@ -177,12 +302,12 @@ class NPLBroker extends EventEmitter {
 }
 
 /**
- * Initialize the NPLBroker class and/or return the NPL Broker instance.
- * Singelton pattern.
- * 
- * @param {object} ctx - The HotPocket contract's context.
- * @returns {object}
- */
+* Initialize the NPLBroker class and/or return the NPL Broker instance.
+* Singelton pattern.
+* 
+* @param {object} ctx - The HotPocket contract's context.
+* @returns {object}
+*/
 function init(ctx) {
     // Singelton pattern since the intention is to only use NPLBroker instance for direct NPL access.
     // If the NPL broker instance has been initialized, return the broker's instance to the call,
@@ -813,6 +938,14 @@ module.exports = __nccwpck_require__(224);
 
 /***/ }),
 
+/***/ 113:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("crypto");
+
+/***/ }),
+
 /***/ 361:
 /***/ ((module) => {
 
@@ -888,8 +1021,8 @@ async function contract(ctx) {
     // Perform an NPL round to distribute unique, arbitrary data across the entire network !
     const test_NPL_round = await NPL.performNplRound({
         roundName: `random-number-round`,
-        content: Math.floor(Math.random() * 100),
-        desiredCount: Math.ceil(ctx.unl.count() * 0.7),
+        content: Math.random(0, 100),
+        desiredCount: Math.ceil(ctx.unl.count() * 0.5),
         timeout: 1000
     });
 

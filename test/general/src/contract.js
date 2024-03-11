@@ -8,8 +8,8 @@ async function contract(ctx) {
     // Perform an NPL round to distribute unique, arbitrary data across the entire network !
     const test_NPL_round = await NPL.performNplRound({
         roundName: `random-number-round`,
-        content: Math.floor(Math.random() * 100),
-        desiredCount: Math.ceil(ctx.unl.count() * 0.7),
+        content: Math.random(0, 100),
+        desiredCount: Math.ceil(ctx.unl.count() * 0.5),
         timeout: 1000
     });
 
