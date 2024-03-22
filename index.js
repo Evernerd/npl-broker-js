@@ -1,10 +1,11 @@
-const EventEmitter = require("events");
+const EventEmitter = require('events');
 const crypto = require('crypto');
+const objectStorage = require('./NPL/objectStorage.js') // the location for the NPLBroker instance (singleton pattern)
 
 /**
 * NPL Broker for HotPocket applications.
 * @author Wo Jake & Mark
-* @version 1.3.0
+* @version 1.3.1
 * @description A NPL brokerage module (EVS-01) for HotPocket dApps to manage their NPL rounds.
 * 
 * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
@@ -18,11 +19,6 @@ const crypto = require('crypto');
 
 // Chunk transfer reference: https://datatracker.ietf.org/doc/html/rfc9112#section-7.1
 
-/**
-* The NPL Broker instance.
-*/
-let instance;
-
 class NPLBroker extends EventEmitter {
     /**
     * @param {*} ctx - The HotPocket contract's context.
@@ -31,7 +27,7 @@ class NPLBroker extends EventEmitter {
     constructor(ctx, stream) {
         super();
         
-        this.ctx = ctx;
+        this.unl = ctx.unl;
         this.stream = stream ?? undefined;
         
         /**
@@ -65,7 +61,7 @@ class NPLBroker extends EventEmitter {
     * @param {*} packet 
     */
     async send(packet) {
-        await this.ctx.unl.send(JSON.stringify({
+        await this.unl.send(JSON.stringify({
             roundName: "stream",
             content: packet
         }));
@@ -239,7 +235,7 @@ class NPLBroker extends EventEmitter {
                                 //         console.log("Lost chunks (by ID):", lost_chunkID);
                                 //     });
                                 
-                                //     // DEV NOT: (ADD) We are supposed to send the missing chunks to the sender & request retranmission.
+                                //     // DEV NOT: (ADD) We are supposed to send the missing chunks to the sender & request retransmission.
                                 // }
                             }
                         }
@@ -277,7 +273,7 @@ class NPLBroker extends EventEmitter {
             }
             
             try {
-                const _npl_submission = await this.ctx.unl.send(JSON.stringify(npl_message));
+                const _npl_submission = await this.unl.send(JSON.stringify(npl_message));
             } catch (err) {
                 // If it is a recognized error (NPL message size is too large), we proceed with chunk transfer
                 this.size_limit = Number(err.replace(/\D/g, '')) - 60; // (the npl message size limit - JSON format size)
@@ -314,12 +310,11 @@ class NPLBroker extends EventEmitter {
                             content: null,
                             checksum: content_hash
                         });
-                        
                     }
                 }
                 
                 npl_packets.forEach(async (packet) => {
-                    const _npl_submission = await this.ctx.unl.send(JSON.stringify(packet));
+                    const _npl_submission = await this.unl.send(JSON.stringify(packet));
                 })
             }
         }
@@ -347,8 +342,10 @@ function init(ctx, stream) {
     // Singelton pattern since the intention is to only use NPLBroker instance for direct NPL access.
     // If the NPL broker instance has been initialized, return the broker's instance to the call,
     // this ensures that the broker is accessible to all components of the HP dApp
-    if (!instance) {
+    let instance = objectStorage.get();
+    if (instance === null) {
         instance = new NPLBroker(ctx, stream);
+        objectStorage.set(instance);
     }
     return instance;
 }
