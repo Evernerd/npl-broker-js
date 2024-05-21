@@ -11,7 +11,7 @@ const objectStorage = __nccwpck_require__(907) // the location for the NPLBroker
 /**
 * NPL Broker for HotPocket applications.
 * @author Wo Jake & Mark
-* @version 1.3.1
+* @version 1.3.2
 * @description A NPL brokerage module (EVS-01) for HotPocket dApps to manage their NPL rounds.
 * 
 * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
@@ -28,7 +28,7 @@ const objectStorage = __nccwpck_require__(907) // the location for the NPLBroker
 class NPLBroker extends EventEmitter {
     /**
     * @param {*} ctx - The HotPocket contract's context.
-    * @param {Function} stream - The listener function for NPL stream.
+    * @param {Function} stream - (Optional) The listener function for non-tagged NPL stream.
     */
     constructor(ctx, stream) {
         super();
@@ -338,14 +338,14 @@ class NPLBroker extends EventEmitter {
 
 /**
 * Initialize the NPLBroker class and/or return the NPL Broker instance.
-* Singelton pattern.
+* Singleton pattern.
 * 
 * @param {object} ctx - The HotPocket contract's context.
 * @param {Function} stream - The listener function for NPL stream.
 * @returns {object}
 */
 function init(ctx, stream) {
-    // Singelton pattern since the intention is to only use NPLBroker instance for direct NPL access.
+    // Singleton pattern since the intention is to only use NPLBroker instance for direct NPL access.
     // If the NPL broker instance has been initialized, return the broker's instance to the call,
     // this ensures that the broker is accessible to all components of the HP dApp
     let instance = objectStorage.get();
