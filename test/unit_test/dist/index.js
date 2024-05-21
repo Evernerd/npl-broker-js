@@ -6,11 +6,12 @@
 
 const EventEmitter = __nccwpck_require__(361);
 const crypto = __nccwpck_require__(113);
+const objectStorage = __nccwpck_require__(907) // the location for the NPLBroker instance (singleton pattern)
 
 /**
 * NPL Broker for HotPocket applications.
 * @author Wo Jake & Mark
-* @version 1.3.0
+* @version 1.3.2
 * @description A NPL brokerage module (EVS-01) for HotPocket dApps to manage their NPL rounds.
 * 
 * See https://github.com/Evernerd/npl-broker-js to learn more and contribute to the codebase, any contribution is truly appreciated!
@@ -24,20 +25,15 @@ const crypto = __nccwpck_require__(113);
 
 // Chunk transfer reference: https://datatracker.ietf.org/doc/html/rfc9112#section-7.1
 
-/**
-* The NPL Broker instance.
-*/
-let instance;
-
 class NPLBroker extends EventEmitter {
     /**
     * @param {*} ctx - The HotPocket contract's context.
-    * @param {Function} stream - The listener function for NPL stream.
+    * @param {Function} stream - (Optional) The listener function for non-tagged NPL stream.
     */
     constructor(ctx, stream) {
         super();
         
-        this.ctx = ctx;
+        this.unl = ctx.unl;
         this.stream = stream ?? undefined;
         
         /**
@@ -71,7 +67,7 @@ class NPLBroker extends EventEmitter {
     * @param {*} packet 
     */
     async send(packet) {
-        await this.ctx.unl.send(JSON.stringify({
+        await this.unl.send(JSON.stringify({
             roundName: "stream",
             content: packet
         }));
@@ -189,7 +185,7 @@ class NPLBroker extends EventEmitter {
                         } 
                         
                         if (!chunk_transfer) {
-                            // Whole message transmitted
+                            // Whole message transmitted 
                             if (packet.checksum === content_hash || packet.checksum === undefined) {
                                 record.push({
                                     "roundName": roundName,
@@ -245,7 +241,7 @@ class NPLBroker extends EventEmitter {
                                 //         console.log("Lost chunks (by ID):", lost_chunkID);
                                 //     });
                                 
-                                //     // DEV NOT: (ADD) We are supposed to send the missing chunks to the sender & request retranmission.
+                                //     // DEV NOT: (ADD) We are supposed to send the missing chunks to the sender & request retransmission.
                                 // }
                             }
                         }
@@ -283,7 +279,7 @@ class NPLBroker extends EventEmitter {
             }
             
             try {
-                const _npl_submission = await this.ctx.unl.send(JSON.stringify(npl_message));
+                const _npl_submission = await this.unl.send(JSON.stringify(npl_message));
             } catch (err) {
                 // If it is a recognized error (NPL message size is too large), we proceed with chunk transfer
                 this.size_limit = Number(err.replace(/\D/g, '')) - 60; // (the npl message size limit - JSON format size)
@@ -320,12 +316,11 @@ class NPLBroker extends EventEmitter {
                             content: null,
                             checksum: content_hash
                         });
-                        
                     }
                 }
                 
                 npl_packets.forEach(async (packet) => {
-                    const _npl_submission = await this.ctx.unl.send(JSON.stringify(packet));
+                    const _npl_submission = await this.unl.send(JSON.stringify(packet));
                 })
             }
         }
@@ -343,18 +338,20 @@ class NPLBroker extends EventEmitter {
 
 /**
 * Initialize the NPLBroker class and/or return the NPL Broker instance.
-* Singelton pattern.
+* Singleton pattern.
 * 
 * @param {object} ctx - The HotPocket contract's context.
 * @param {Function} stream - The listener function for NPL stream.
 * @returns {object}
 */
 function init(ctx, stream) {
-    // Singelton pattern since the intention is to only use NPLBroker instance for direct NPL access.
+    // Singleton pattern since the intention is to only use NPLBroker instance for direct NPL access.
     // If the NPL broker instance has been initialized, return the broker's instance to the call,
     // this ensures that the broker is accessible to all components of the HP dApp
-    if (!instance) {
+    let instance = objectStorage.get();
+    if (instance === null) {
         instance = new NPLBroker(ctx, stream);
+        objectStorage.set(instance);
     }
     return instance;
 }
@@ -367,7 +364,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 875:
+/***/ 713:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 /******/ (() => { // webpackBootstrap
@@ -816,8 +813,9 @@ class HotPocketContract {
 
     #controlChannel = null;
     #clientProtocol = null;
+    #forceTerminate = false;
 
-    init(contractFunc, clientProtocol = common.clientProtocols.json) {
+    init(contractFunc, clientProtocol = common.clientProtocols.json, forceTerminate = false) {
 
         return new Promise(resolve => {
             if (this.#controlChannel) { // Already initialized.
@@ -833,6 +831,8 @@ class HotPocketContract {
                 resolve(false);
                 return;
             }
+
+            this.#forceTerminate = forceTerminate;
 
             // Parse HotPocket args.
             hotpocket_contract_fs.readFile(process.stdin.fd, 'utf8', (err, argsJson) => {
@@ -864,7 +864,8 @@ class HotPocketContract {
 
     #terminate() {
         this.#controlChannel.close();
-        process.kill(process.pid, 'SIGINT');
+        if (this.#forceTerminate)
+            process.kill(process.pid, 'SIGINT');
     }
 }
 
@@ -978,6 +979,14 @@ module.exports = __nccwpck_require__(224);
 
 /***/ }),
 
+/***/ 907:
+/***/ ((module) => {
+
+module.exports = eval("require")("./NPL/objectStorage.js");
+
+
+/***/ }),
+
 /***/ 113:
 /***/ ((module) => {
 
@@ -1007,6 +1016,14 @@ module.exports = require("fs");
 
 "use strict";
 module.exports = require("tty");
+
+/***/ }),
+
+/***/ 114:
+/***/ ((module) => {
+
+"use strict";
+module.exports = JSON.parse('{"name":"npl-broker","version":"1.3.2","description":"A NPL brokerage standard (EVS01) implemented on NodeJS for HotPocket instances to manage their NPL rounds in a systematic manner.","main":"index.js","scripts":{"test":"sudo hpdevkit clean && sudo npm link && cd test/unit_test/src && sudo npm link npl-broker && sudo HP_CLUSTER_SIZE=6 npm start"},"repository":{"type":"git","url":"git+https://github.com/Evernerd/npl-broker-js.git"},"keywords":["NPL","HotPocket","Evernode"],"author":"Wo Jake","license":"MIT","bugs":{"url":"https://github.com/Evernerd/npl-broker-js/issues"},"homepage":"https://github.com/Evernerd/npl-broker-js#readme"}');
 
 /***/ })
 
@@ -1051,10 +1068,28 @@ module.exports = require("tty");
 var __webpack_exports__ = {};
 // This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
 (() => {
-const HotPocket = __nccwpck_require__(875);
+/**
+ * 1. This unit test is performed locally in the tester's environment.
+ * 2. This unit test aims to ensure npl-broker functions stably as expected with the intended model and code.
+ * 3. Each feature of npl-broker must be included in this file in its own respective test case and other overlapping features.
+ * 4. Each test case SHOULD include its description, objective, expected result and failure conditions in the code.
+ * 
+ * TODO:
+ * -- Use jest
+ * -- Add unit test for Evernode `production` network (mainnet) and testnet. 
+ */
+
+/**
+ * START UNIT TEST
+ */
+const HotPocket = __nccwpck_require__(713);
 const NPLBroker = __nccwpck_require__(277);
 const crypto = __nccwpck_require__(113);
 const fs = __nccwpck_require__(147);
+
+var package = __nccwpck_require__(114);
+
+console.log(`Dependencies: ${package.dependencies}`);
 
 async function delay(ms) {
     return await new Promise(resolve => setTimeout(resolve, ms));
@@ -1063,17 +1098,17 @@ async function delay(ms) {
 /**
  * Check if the broker's NPL stream works as intended
  */
-async function testNplStream(ctx, NPL, NplStream, messageCount, timeout) {
+async function testNplStream(NPL, messageCount) {
     while (messageCount > 0) {
         // Test JSON
         await NPL.send(JSON.stringify({
-            content: "dinner with Jay Z or dinner with Bharath 321 @#$",
+            content: "dinner with Wo Jake or dinner with Bharath ? 321 @#$",
             randomNumber: 123589,
             randomBoolean: true,
-            randomArray: ["JayZ", "Bharath"]
+            randomArray: ["Wo Jake", "Bharath"]
         }));        
         // Test string
-        await NPL.send("dinner with Jay Z or dinner with Bharath 321 @#$");
+        await NPL.send("dinner with Wo Jake or dinner with Bharath ? 321 @#$");
         // Test number
         await NPL.send(1234567890);
         // Test boolean
@@ -1214,22 +1249,26 @@ async function testTriggerChunkTransfer(ctx, NPL, roundName, timeout) {
 async function contract(ctx) {
     // NPL-Broker unit test
 
+    // The overall score of this unit test
     var score = 0;
-    var messageCount = 2;
 
     console.log(`\n npl-broker-js' UNIT TEST (5 tests):`);
     console.log(`    UNL count: ${ctx.unl.count()}\n`);
 
+    // The amount of NPL messages we want in Test #1
+    var messageCount = 2;
+
+    // The amount of NPL message we received in Test #1, should be "nplMessageCount == messageCount" for success
     var nplMessageCount = 0;
     const LISTENER_STREAM = (packet) => {
         nplMessageCount++;
     }
 
-    // initialize npl-broker class
+    // Initialize npl-broker object
     const NPL = NPLBroker.init(ctx, LISTENER_STREAM);
 
     // UNIT TEST #1 : using the broker's NPL stream
-    const T1 = await testNplStream(ctx, NPL, LISTENER_STREAM, messageCount, 2000);
+    const T1 = await testNplStream(NPL, messageCount);
 
     await delay(1000);
     if (nplMessageCount > 0) {
@@ -1263,6 +1302,9 @@ async function contract(ctx) {
 
 const hpc = new HotPocket.Contract();
 hpc.init(contract);
+/**
+ * END UNIT TEST
+ */
 })();
 
 module.exports = __webpack_exports__;

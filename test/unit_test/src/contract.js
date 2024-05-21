@@ -1,7 +1,27 @@
+/**
+ * 1. This unit test is performed locally in the tester's environment.
+ * 2. This unit test aims to ensure npl-broker functions stably as expected with the intended model and code.
+ * 3. Each feature of npl-broker must be included in this file in its own respective test case and other overlapping features.
+ * 4. Each test case SHOULD include its description, objective, expected result and failure conditions in the code.
+ * 
+ * TODO:
+ * -- Use jest.
+ * -- Store and Log all unit_test results in a file.
+ * -- Add unit test for Evernode `production` network (mainnet) and testnet.
+ *    ^- Ensure unit_test results (in a file) are accessible by the user (this is us)
+ */
+
+/**
+ * START UNIT TEST
+ */
 const HotPocket = require('hotpocket-nodejs-contract');
 const NPLBroker = require('npl-broker');
 const crypto = require('crypto');
 const fs = require('fs');
+
+var package = require('../../../package.json');
+
+console.log(`Dependencies: ${package.dependencies}`);
 
 async function delay(ms) {
     return await new Promise(resolve => setTimeout(resolve, ms));
@@ -10,17 +30,17 @@ async function delay(ms) {
 /**
  * Check if the broker's NPL stream works as intended
  */
-async function testNplStream(ctx, NPL, NplStream, messageCount, timeout) {
+async function testNplStream(NPL, messageCount) {
     while (messageCount > 0) {
         // Test JSON
         await NPL.send(JSON.stringify({
-            content: "dinner with Jay Z or dinner with Bharath 321 @#$",
+            content: "dinner with Wo Jake or dinner with Bharath ? 321 @#$",
             randomNumber: 123589,
             randomBoolean: true,
-            randomArray: ["JayZ", "Bharath"]
+            randomArray: ["Wo Jake", "Bharath"]
         }));        
         // Test string
-        await NPL.send("dinner with Jay Z or dinner with Bharath 321 @#$");
+        await NPL.send("dinner with Wo Jake or dinner with Bharath ? 321 @#$");
         // Test number
         await NPL.send(1234567890);
         // Test boolean
@@ -161,22 +181,26 @@ async function testTriggerChunkTransfer(ctx, NPL, roundName, timeout) {
 async function contract(ctx) {
     // NPL-Broker unit test
 
+    // The overall score of this unit test
     var score = 0;
-    var messageCount = 2;
 
     console.log(`\n npl-broker-js' UNIT TEST (5 tests):`);
     console.log(`    UNL count: ${ctx.unl.count()}\n`);
 
+    // The amount of NPL messages we want in Test #1
+    var messageCount = 2;
+
+    // The amount of NPL message we received in Test #1, should be "nplMessageCount == messageCount" for success
     var nplMessageCount = 0;
     const LISTENER_STREAM = (packet) => {
         nplMessageCount++;
     }
 
-    // initialize npl-broker class
+    // Initialize npl-broker object
     const NPL = NPLBroker.init(ctx, LISTENER_STREAM);
 
     // UNIT TEST #1 : using the broker's NPL stream
-    const T1 = await testNplStream(ctx, NPL, LISTENER_STREAM, messageCount, 2000);
+    const T1 = await testNplStream(NPL, messageCount);
 
     await delay(1000);
     if (nplMessageCount > 0) {
@@ -210,3 +234,6 @@ async function contract(ctx) {
 
 const hpc = new HotPocket.Contract();
 hpc.init(contract);
+/**
+ * END UNIT TEST
+ */
